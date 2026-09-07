@@ -1,0 +1,19 @@
+# Convenience file for spinning up a local MySQL instance to match
+# backend/.env.example. Run: docker compose up -d
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: lostfound
+      MYSQL_USER: lostfound_app
+      MYSQL_PASSWORD: lostfound_pass
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - lostfound_mysql_data:/var/lib/mysql
+
+volumes:
+  lostfound_mysql_data:
