@@ -29,7 +29,7 @@ export default function BrowsePage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Browse reported items</h1>
+        <h1 className="page-title">Browse report items</h1>
         <p className="page-lede">
           Search everything reported lost or found on Main Campus. Recognise something? Open it and file a claim —
           an administrator verifies ownership before anything changes hands.
