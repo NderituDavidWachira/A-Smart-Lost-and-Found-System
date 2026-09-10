@@ -10,20 +10,34 @@ import NotificationsPage from "./pages/NotificationsPage";
 import AdminPage from "./pages/AdminPage";
 
 function AuthenticatedApp() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [unreadCount, setUnreadCount] = useState(0);
 
   const refreshUnread = useCallback(() => {
+    if (isAdmin) return;
     api.notifications(token).then((notes) => {
       setUnreadCount(notes.filter((n) => !n.is_read).length);
     });
-  }, [token]);
+  }, [token, isAdmin]);
 
   useEffect(() => {
+    if (isAdmin) return;
     refreshUnread();
     const interval = setInterval(refreshUnread, 15000);
     return () => clearInterval(interval);
-  }, [refreshUnread]);
+  }, [refreshUnread, isAdmin]);
+
+  if (isAdmin) {
+    return (
+      <Layout>
+        <Routes>
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </Layout>
+    );
+  }
 
   return (
     <Layout unreadCount={unreadCount}>
@@ -31,7 +45,6 @@ function AuthenticatedApp() {
         <Route path="/" element={<BrowsePage />} />
         <Route path="/report" element={<ReportPage />} />
         <Route path="/notifications" element={<NotificationsPage onChange={refreshUnread} />} />
-        <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

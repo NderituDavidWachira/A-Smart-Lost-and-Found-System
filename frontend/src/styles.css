@@ -171,46 +171,169 @@ button {
   margin: 0;
 }
 
-/* ---------- Cards / lists ---------- */
+/* ---------- Cards / grid (Jumia-style product grid) ---------- */
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
 .item-card {
   background: var(--paper-raised);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--gold);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  margin-bottom: 12px;
+  border-radius: 6px;
+  overflow: hidden;
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  box-shadow: 0 1px 2px rgba(27, 36, 48, 0.05);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.item-card.type-lost {
-  border-left-color: var(--lost);
+.item-card:hover {
+  box-shadow: 0 6px 18px rgba(27, 36, 48, 0.12);
+  transform: translateY(-2px);
 }
 
-.item-card.type-found {
-  border-left-color: var(--found);
+.item-photo-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--paper);
+  overflow: hidden;
 }
 
-.item-main {
+.item-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.item-photo-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--line);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--paper),
+    var(--paper) 10px,
+    #efece3 10px,
+    #efece3 20px
+  );
+}
+
+.item-type-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: #fff;
+}
+
+.item-type-badge.lost {
+  background: var(--lost);
+}
+
+.item-type-badge.found {
+  background: var(--found);
+}
+
+.item-status-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink-soft);
+}
+
+.item-status-badge.status-claimed {
+  color: var(--gold-deep);
+}
+
+.item-status-badge.status-returned {
+  color: var(--found);
+}
+
+.item-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  min-width: 0;
-}
-
-.item-top-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
 }
 
 .item-title {
-  font-family: var(--serif);
-  font-size: 17px;
+  font-family: var(--sans);
+  font-size: 13.5px;
   font-weight: 600;
-  margin: 0;
+  color: var(--ink);
+  margin: 0 0 4px 0;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.7em;
 }
 
+.item-meta-line {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.item-meta-loc {
+  font-weight: 500;
+}
+
+.item-meta-dot {
+  margin: 0 4px;
+}
+
+.item-desc {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 2px 0 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.item-card-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.category-chip {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gold-deep);
+  background: var(--pending-bg);
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+/* Generic status pill, used by the admin claims list */
 .tag {
   font-size: 11px;
   font-weight: 700;
@@ -219,16 +342,6 @@ button {
   padding: 2px 7px;
   border-radius: 10px;
   white-space: nowrap;
-}
-
-.tag.lost {
-  background: var(--lost-bg);
-  color: var(--lost);
-}
-
-.tag.found {
-  background: var(--found-bg);
-  color: var(--found);
 }
 
 .tag.status-open {
@@ -244,34 +357,6 @@ button {
 .tag.status-returned {
   background: var(--found-bg);
   color: var(--found);
-}
-
-.item-meta {
-  font-size: 13px;
-  color: var(--ink-soft);
-  margin: 4px 0;
-}
-
-.item-desc {
-  font-size: 14px;
-  color: var(--ink);
-  margin: 6px 0 0 0;
-}
-
-.item-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.category-chip {
-  font-size: 12px;
-  color: var(--ink-soft);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 3px 10px;
 }
 
 /* ---------- Buttons ---------- */
@@ -405,6 +490,20 @@ button {
   background: var(--found-bg);
   border-color: var(--found);
   color: var(--found);
+}
+
+.image-preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.image-preview {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
 }
 
 .error-banner {

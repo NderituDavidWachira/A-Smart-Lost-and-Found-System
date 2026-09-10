@@ -8,6 +8,8 @@ export default function AdminPage() {
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("pending");
+  const [decidingId, setDecidingId] = useState(null);
+  const [actionError, setActionError] = useState("");
 
   function load() {
     setLoading(true);
@@ -22,8 +24,16 @@ export default function AdminPage() {
   useEffect(load, [token, statusFilter]);
 
   async function decide(claimId, decision) {
-    await api.decideClaim(claimId, decision, token);
-    load();
+    setActionError("");
+    setDecidingId(claimId);
+    try {
+      await api.decideClaim(claimId, decision, token);
+      load();
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setDecidingId(null);
+    }
   }
 
   return (
@@ -32,6 +42,8 @@ export default function AdminPage() {
         <h1 className="page-title">Admin dashboard</h1>
         <p className="page-lede">Verify ownership claims and monitor recovery performance across campus.</p>
       </div>
+
+      {actionError && <div className="error-banner">{actionError}</div>}
 
       {stats && (
         <div className="stat-grid">
@@ -75,35 +87,38 @@ export default function AdminPage() {
       ) : claims.length === 0 ? (
         <div className="empty-state">No {statusFilter !== "all" ? statusFilter : ""} claims right now.</div>
       ) : (
-        claims.map((c) => (
-          <div className="claim-card" key={c.id}>
-            <div className="claim-card-head">
-              <strong>Claim #{c.id} — item #{c.item_id}</strong>
-              <span className={`tag status-${c.status === "verified" ? "returned" : c.status === "rejected" ? "open" : "claimed"}`}>
-                {c.status}
-              </span>
-            </div>
-            <div className="item-meta">Claimed by {c.claimant_name}</div>
-            <div className="claim-note-label">Proof of ownership</div>
-            <div>{c.proof_notes || "—"}</div>
-            {c.token_of_appreciation && (
-              <>
-                <div className="claim-note-label">Token of appreciation for finder</div>
-                <div>{c.token_of_appreciation}</div>
-              </>
-            )}
-            {c.status === "pending" && (
-              <div className="claim-actions">
-                <button className="btn btn-gold btn-sm" onClick={() => decide(c.id, "verified")}>
-                  Verify &amp; mark returned
-                </button>
-                <button className="btn btn-outline btn-sm" onClick={() => decide(c.id, "rejected")}>
-                  Reject claim
-                </button>
+        claims.map((c) => {
+          const isBusy = decidingId === c.id;
+          return (
+            <div className="claim-card" key={c.id}>
+              <div className="claim-card-head">
+                <strong>Claim #{c.id} — item #{c.item_id}</strong>
+                <span className={`tag status-${c.status === "verified" ? "returned" : c.status === "rejected" ? "open" : "claimed"}`}>
+                  {c.status}
+                </span>
               </div>
-            )}
-          </div>
-        ))
+              <div className="item-meta">Claimed by {c.claimant_name}</div>
+              <div className="claim-note-label">Proof of ownership</div>
+              <div>{c.proof_notes || "—"}</div>
+              {c.token_of_appreciation && (
+                <>
+                  <div className="claim-note-label">Token of appreciation for finder</div>
+                  <div>{c.token_of_appreciation}</div>
+                </>
+              )}
+              {c.status === "pending" && (
+                <div className="claim-actions">
+                  <button className="btn btn-gold btn-sm" disabled={isBusy} onClick={() => decide(c.id, "verified")}>
+                    {isBusy ? "Verifying…" : "Verify & mark returned"}
+                  </button>
+                  <button className="btn btn-outline btn-sm" disabled={isBusy} onClick={() => decide(c.id, "rejected")}>
+                    {isBusy ? "Rejecting…" : "Reject claim"}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );

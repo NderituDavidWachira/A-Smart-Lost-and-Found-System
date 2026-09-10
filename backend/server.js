@@ -8,10 +8,18 @@
  * - Business Logic Module (categorisation, matching algorithm, claims) -> matching.js
  * - Notification Module (in-app notification feed; email/SMS hooks stubbed)
  * - Admin & User Management Module (verification dashboard, stats)
+ *
+ * NOTE: Admin accounts are NOT created through this API. There is
+ * intentionally no admin signup path here — the single admin account is
+ * created directly in the database via scripts/create-admin.js.
  */
+const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
 require("dotenv").config({ quiet: true });
 
 const { pool, initSchema } = require("./db");
@@ -24,7 +32,32 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 5001;
-const ADMIN_SIGNUP_CODE = process.env.ADMIN_SIGNUP_CODE || "SPU-ADMIN-2025";
+
+// ---------------------------------------------------------------------------
+// Image uploads: stored on disk under backend/uploads, served statically at
+// /uploads/<filename>. Only image files up to 5MB are accepted.
+// ---------------------------------------------------------------------------
+
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed"));
+    }
+    cb(null, true);
+  },
+});
 
 // Wrap async route handlers so thrown errors reach Express's error handler
 // instead of crashing the process.
@@ -37,7 +70,7 @@ const ah = (fn) => (req, res, next) => fn(req, res, next).catch(next);
 app.post(
   "/api/register",
   ah(async (req, res) => {
-    const { name, email, password, phone, is_admin_signup } = req.body || {};
+    const { name, email, password, phone } = req.body || {};
     for (const [field, value] of Object.entries({ name, email, password })) {
       if (!value) return res.status(400).json({ error: `${field} is required` });
     }
@@ -45,12 +78,11 @@ app.post(
     const [[existing]] = await pool.query(`SELECT id FROM users WHERE email = ?`, [email]);
     if (existing) return res.status(409).json({ error: "Email already registered" });
 
-    const role = is_admin_signup === ADMIN_SIGNUP_CODE ? "admin" : "student";
     const passwordHash = await bcrypt.hash(password, 10);
 
     const [info] = await pool.query(
-      `INSERT INTO users (name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?)`,
-      [name, email, phone || "", passwordHash, role]
+      `INSERT INTO users (name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, 'student')`,
+      [name, email, phone || "", passwordHash]
     );
 
     const [[user]] = await pool.query(`SELECT * FROM users WHERE id = ?`, [info.insertId]);
@@ -122,6 +154,12 @@ app.get(
 app.post(
   "/api/items",
   requireAuth,
+  (req, res, next) => {
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
   ah(async (req, res) => {
     const { item_type, category, title, description, location, date_occurred } = req.body || {};
     for (const [field, value] of Object.entries({ item_type, category, title, location, date_occurred })) {
@@ -134,10 +172,12 @@ app.post(
       return res.status(400).json({ error: "invalid category" });
     }
 
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+
     const [info] = await pool.query(
-      `INSERT INTO items (item_type, category, title, description, location, date_occurred, reporter_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [item_type, category, title, description || "", location, date_occurred, req.userId]
+      `INSERT INTO items (item_type, category, title, description, location, date_occurred, reporter_id, image_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [item_type, category, title, description || "", location, date_occurred, req.userId, imageUrl]
     );
 
     const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [info.insertId]);

@@ -15,6 +15,7 @@ async function itemOut(i) {
     location: i.location,
     date_occurred: i.date_occurred,
     status: i.status,
+    image_url: i.image_url || null,
     reporter_id: i.reporter_id,
     reporter_name: reporter ? reporter.name : null,
     created_at: i.created_at,

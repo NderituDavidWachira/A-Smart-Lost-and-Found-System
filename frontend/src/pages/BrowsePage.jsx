@@ -63,19 +63,21 @@ export default function BrowsePage() {
       ) : items.length === 0 ? (
         <div className="empty-state">No items match your filters yet. Try widening your search.</div>
       ) : (
-        items.map((item) => (
-          <ItemCard
-            key={item.id}
-            item={item}
-            action={
-              item.status === "open" && item.reporter_id !== user?.id ? (
-                <button className="btn btn-outline btn-sm" onClick={() => setClaimTarget(item)}>
-                  This is mine
-                </button>
-              ) : null
-            }
-          />
-        ))
+        <div className="items-grid">
+          {items.map((item) => (
+            <ItemCard
+              key={item.id}
+              item={item}
+              action={
+                item.status === "open" && item.reporter_id !== user?.id ? (
+                  <button className="btn btn-outline btn-sm" onClick={() => setClaimTarget(item)}>
+                    This is mine
+                  </button>
+                ) : null
+              }
+            />
+          ))}
+        </div>
       )}
 
       {claimTarget && (

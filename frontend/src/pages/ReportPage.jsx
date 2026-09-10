@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export default function ReportPage() {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({
     item_type: "lost",
@@ -17,6 +19,8 @@ export default function ReportPage() {
     location: "",
     date_occurred: today(),
   });
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(null);
@@ -28,8 +32,43 @@ export default function ReportPage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!image) {
+      setImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(image);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  function handleImageChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setImage(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("Image is too large — please choose one under 5MB.");
+      e.target.value = "";
+      return;
+    }
+    setError("");
+    setImage(file);
+  }
+
+  function clearImage() {
+    setImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function submit(e) {
@@ -38,9 +77,10 @@ export default function ReportPage() {
     setError("");
     setSuccess(null);
     try {
-      const result = await api.createItem(form, token);
+      const result = await api.createItem({ ...form, image }, token);
       setSuccess(result);
       setForm((f) => ({ ...f, title: "", description: "", location: "" }));
+      clearImage();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -53,8 +93,8 @@ export default function ReportPage() {
       <div className="page-header">
         <h1 className="page-title">Report an item</h1>
         <p className="page-lede">
-          The more specific your description, the faster the matching engine can connect a lost report with a
-          found one.
+          The more specific your description — and a photo, if you have one — the faster the matching engine can
+          connect a lost report with a found one.
         </p>
       </div>
 
@@ -144,6 +184,20 @@ export default function ReportPage() {
               onChange={(e) => update("description", e.target.value)}
               placeholder="Colour, brand, distinguishing marks…"
             />
+          </div>
+
+          <div className="field">
+            <label htmlFor="image">Photo (optional)</label>
+            {imagePreview ? (
+              <div className="image-preview-wrap">
+                <img src={imagePreview} alt="Selected item preview" className="image-preview" />
+                <button type="button" className="btn btn-outline btn-sm" onClick={clearImage}>
+                  Remove photo
+                </button>
+              </div>
+            ) : (
+              <input id="image" type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} />
+            )}
           </div>
 
           <button type="submit" className="btn btn-gold" disabled={busy}>

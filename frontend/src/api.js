@@ -1,19 +1,22 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5001";
 
 async function request(path, { method = "GET", body, token } = {}) {
-  const headers = { "Content-Type": "application/json" };
+  const isFormData = body instanceof FormData;
+  const headers = {};
+  if (!isFormData && body) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
 
   let data = null;
   try {
     data = await res.json();
   } catch {
+    // no body
   }
 
   if (!res.ok) {
@@ -34,7 +37,17 @@ export const api = {
     return request(`/api/items${qs ? `?${qs}` : ""}`);
   },
   getItem: (id) => request(`/api/items/${id}`),
-  createItem: (payload, token) => request("/api/items", { method: "POST", body: payload, token }),
+  createItem: (payload, token) => {
+    const formData = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (key === "image") {
+        if (value) formData.append("image", value);
+      } else if (value !== undefined && value !== null) {
+        formData.append(key, value);
+      }
+    });
+    return request("/api/items", { method: "POST", body: formData, token });
+  },
 
   claimItem: (itemId, payload, token) =>
     request(`/api/items/${itemId}/claim`, { method: "POST", body: payload, token }),
@@ -48,4 +61,9 @@ export const api = {
   adminStats: (token) => request("/api/admin/stats", { token }),
 };
 
-export { BASE_URL };
+function imageUrl(path) {
+  if (!path) return null;
+  return `${BASE_URL}${path}`;
+}
+
+export { BASE_URL, imageUrl };

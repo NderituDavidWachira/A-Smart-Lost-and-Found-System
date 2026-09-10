@@ -2,10 +2,10 @@ const mysql = require("mysql2/promise");
 require("dotenv").config({ quiet: true });
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
+  host: process.env.DB_HOST || "127.0.0.1",
   port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
+  user: process.env.DB_USER || "lostfound_app",
+  password: process.env.DB_PASSWORD || "lostfound_pass",
   database: process.env.DB_NAME || "lostfound",
   waitForConnections: true,
   connectionLimit: 10,
@@ -31,6 +31,7 @@ const SCHEMA = [
     location VARCHAR(150) NOT NULL,
     date_occurred VARCHAR(30) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'open',
+    image_url VARCHAR(500),
     reporter_id INT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (reporter_id) REFERENCES users(id)
@@ -59,12 +60,36 @@ const SCHEMA = [
   ) ENGINE=InnoDB`,
 ];
 
+// Adds columns that were introduced after a database may already have been
+// created, so existing installs don't need to be dropped and recreated.
+const MIGRATIONS = [
+  {
+    table: "items",
+    column: "image_url",
+    ddl: "ALTER TABLE items ADD COLUMN image_url VARCHAR(500)",
+  },
+];
+
+async function runMigrations(conn) {
+  for (const { table, column, ddl } of MIGRATIONS) {
+    const [rows] = await conn.query(
+      `SELECT COUNT(*) c FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [table, column]
+    );
+    if (rows[0].c === 0) {
+      await conn.query(ddl);
+    }
+  }
+}
+
 async function initSchema() {
   const conn = await pool.getConnection();
   try {
     for (const statement of SCHEMA) {
       await conn.query(statement);
     }
+    await runMigrations(conn);
   } finally {
     conn.release();
   }
