@@ -1,13 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
-const icons = {
-  browse: "🔎",
-  report: "＋",
-  notifications: "🔔",
-  admin: "🛡",
-};
-
 export default function Layout({ children, unreadCount = 0 }) {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -17,24 +10,24 @@ export default function Layout({ children, unreadCount = 0 }) {
       <aside className="sidebar">
         <div>
           <div className="brand">Campus Lost &amp; Found</div>
-          <div className="brand-sub">St. Paul&apos;s University · Main Campus</div>
+          <div className="brand-sub">St. Paul&apos;s University</div>
         </div>
 
         <nav className="nav-group">
           {isAdmin ? (
             <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-              <span>{icons.admin}</span> Admin dashboard
+              Admin dashboard
             </NavLink>
           ) : (
             <>
               <NavLink to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-                <span>{icons.browse}</span> Browse items
+                Browse items
               </NavLink>
               <NavLink to="/report" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-                <span>{icons.report}</span> Report an item
+                Report an item
               </NavLink>
               <NavLink to="/notifications" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-                <span>{icons.notifications}</span> Notifications
+                Notifications
                 {unreadCount > 0 && <span className="nav-badge">{unreadCount}</span>}
               </NavLink>
             </>
@@ -45,7 +38,7 @@ export default function Layout({ children, unreadCount = 0 }) {
           <div className="sidebar-user">{user?.name}</div>
           <div>{isAdmin ? "Administrator" : "Student"}</div>
           <button className="logout-btn" onClick={logout}>
-            Log out
+            Log out ➤
           </button>
         </div>
       </aside>

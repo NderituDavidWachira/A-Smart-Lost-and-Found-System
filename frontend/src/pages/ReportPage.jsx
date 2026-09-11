@@ -93,7 +93,7 @@ export default function ReportPage() {
       <div className="page-header">
         <h1 className="page-title">Report an item</h1>
         <p className="page-lede">
-          The more specific your description — and a photo, if you have one — the faster the matching engine can
+          The more specific your description and a photo, the faster the matching engine can
           connect a lost report with a found one.
         </p>
       </div>

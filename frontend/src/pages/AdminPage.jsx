@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import ItemCard from "../components/ItemCard";
+import ClaimCard from "../components/ClaimCard";
 
 export default function AdminPage() {
   const { token } = useAuth();
@@ -116,38 +117,17 @@ function ClaimsQueue({ token, onStatsChange }) {
       ) : claims.length === 0 ? (
         <div className="empty-state">No {statusFilter !== "all" ? statusFilter : ""} claims right now.</div>
       ) : (
-        claims.map((c) => {
-          const isBusy = decidingId === c.id;
-          return (
-            <div className="claim-card" key={c.id}>
-              <div className="claim-card-head">
-                <strong>Claim #{c.id} — item #{c.item_id}</strong>
-                <span className={`tag status-${c.status === "verified" ? "returned" : c.status === "rejected" ? "open" : "claimed"}`}>
-                  {c.status}
-                </span>
-              </div>
-              <div className="item-meta">Claimed by {c.claimant_name}</div>
-              <div className="claim-note-label">Proof of ownership</div>
-              <div>{c.proof_notes || "—"}</div>
-              {c.token_of_appreciation && (
-                <>
-                  <div className="claim-note-label">Token of appreciation for finder</div>
-                  <div>{c.token_of_appreciation}</div>
-                </>
-              )}
-              {c.status === "pending" && (
-                <div className="claim-actions">
-                  <button className="btn btn-gold btn-sm" disabled={isBusy} onClick={() => decide(c.id, "verified")}>
-                    {isBusy ? "Verifying…" : "Verify & mark returned"}
-                  </button>
-                  <button className="btn btn-outline btn-sm" disabled={isBusy} onClick={() => decide(c.id, "rejected")}>
-                    {isBusy ? "Rejecting…" : "Reject claim"}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })
+        <div className="items-grid claims-grid">
+          {claims.map((c) => (
+            <ClaimCard
+              key={c.id}
+              claim={c}
+              busy={decidingId === c.id}
+              onVerify={() => decide(c.id, "verified")}
+              onReject={() => decide(c.id, "rejected")}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

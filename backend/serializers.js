@@ -28,9 +28,19 @@ async function itemsOut(items) {
 
 async function claimOut(c) {
   const [[claimant]] = await pool.query(`SELECT name FROM users WHERE id = ?`, [c.claimant_id]);
+  const [[item]] = await pool.query(
+    `SELECT title, category, item_type, image_url, location, date_occurred FROM items WHERE id = ?`,
+    [c.item_id]
+  );
   return {
     id: c.id,
     item_id: c.item_id,
+    item_title: item ? item.title : null,
+    item_category: item ? item.category : null,
+    item_type: item ? item.item_type : null,
+    item_image_url: item ? item.image_url : null,
+    item_location: item ? item.location : null,
+    item_date_occurred: item ? item.date_occurred : null,
     claimant_id: c.claimant_id,
     claimant_name: claimant ? claimant.name : null,
     status: c.status,

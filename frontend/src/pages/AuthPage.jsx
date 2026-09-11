@@ -10,7 +10,9 @@ export default function AuthPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const { login } = useAuth();
 
   function update(field, value) {
@@ -20,18 +22,27 @@ export default function AuthPage() {
   function switchMode(next) {
     setMode(next);
     setError("");
+    setNotice("");
   }
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    setNotice("");
     setBusy(true);
     try {
-      const result =
-        mode === "login"
-          ? await api.login({ email: form.email, password: form.password })
-          : await api.register(form);
-      login(result.token, result.user);
+      if (mode === "login") {
+        const result = await api.login({ email: form.email, password: form.password });
+        login(result.token, result.user);
+        return;
+      }
+
+      // Registration succeeds but does NOT log the user in — send them back
+      // to the login tab instead, with their email prefilled.
+      await api.register(form);
+      setMode("login");
+      setNotice("Account created. Please log in below.");
+      setForm((f) => ({ name: "", email: f.email, password: "", phone: "" }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -79,6 +90,11 @@ export default function AuthPage() {
           {mode === "login" ? "Welcome to the Lost & Found Portal" : "Register for the Lost & Found Portal"}
         </p>
 
+        {notice && (
+          <div className="success-banner" role="status">
+            {notice}
+          </div>
+        )}
         {error && (
           <div className="error-banner" role="alert">
             {error}
@@ -150,7 +166,7 @@ export default function AuthPage() {
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 Remember me
               </label>
-              <button type="button" className="auth-forgot">
+              <button type="button" className="auth-forgot" onClick={() => setShowForgot(true)}>
                 Forgot password?
               </button>
             </div>
@@ -163,6 +179,130 @@ export default function AuthPage() {
       </div>
 
       <div className="auth-footer">2026 © Campus Lost &amp; Found</div>
+
+      {showForgot && (
+        <ForgotPasswordModal
+          initialEmail={form.email}
+          onClose={() => setShowForgot(false)}
+          onDone={(email) => {
+            setShowForgot(false);
+            setMode("login");
+            setNotice("Password updated. Please log in with your new password.");
+            setForm((f) => ({ ...f, email, password: "" }));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForgotPasswordModal({ initialEmail, onClose, onDone }) {
+  const [email, setEmail] = useState(initialEmail || "");
+  const [phone, setPhone] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+
+    if (newPassword !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.forgotPassword({ email, phone, new_password: newPassword });
+      onDone(email);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(58,20,32,0.65)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        zIndex: 30,
+      }}
+      onClick={onClose}
+    >
+      <div className="form-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+        <h2 className="page-title" style={{ fontSize: 20 }}>
+          Reset your password
+        </h2>
+        <p className="page-lede" style={{ marginBottom: 18 }}>
+          Confirm the email and phone number on your account, then set a new password. There's no email
+          reset link — this updates it immediately.
+        </p>
+
+        {error && <div className="error-banner">{error}</div>}
+
+        <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="reset-email">University email</label>
+            <input
+              id="reset-email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="reset-phone">Phone number on file</label>
+            <input
+              id="reset-phone"
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="07XXXXXXXX"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="reset-new">New password</label>
+            <input
+              id="reset-new"
+              type="password"
+              required
+              minLength={6}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="reset-confirm">Confirm new password</label>
+            <input
+              id="reset-confirm"
+              type="password"
+              required
+              minLength={6}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button type="button" className="btn btn-outline" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-gold" disabled={busy}>
+              {busy ? "Updating…" : "Update password"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

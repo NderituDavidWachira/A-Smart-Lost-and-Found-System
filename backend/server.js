@@ -91,6 +91,37 @@ app.post(
   })
 );
 
+// Self-service reset: no email server is configured, so identity is
+// confirmed by matching email + phone against what's on file at
+// registration, then the password is updated directly. Not as strong as an
+// emailed reset link, but works with zero extra infrastructure.
+app.post(
+  "/api/forgot-password",
+  ah(async (req, res) => {
+    const { email, phone, new_password } = req.body || {};
+    for (const [field, value] of Object.entries({ email, phone, new_password })) {
+      if (!value) return res.status(400).json({ error: `${field} is required` });
+    }
+    if (new_password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const [[user]] = await pool.query(`SELECT * FROM users WHERE email = ?`, [email]);
+    const phoneMatches = user && (user.phone || "").trim() === phone.trim() && phone.trim() !== "";
+
+    if (!user || !phoneMatches) {
+      return res.status(404).json({
+        error: "No account found matching that email and phone number.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(new_password, 10);
+    await pool.query(`UPDATE users SET password_hash = ? WHERE id = ?`, [passwordHash, user.id]);
+
+    res.json({ message: "Password updated. You can now log in with your new password." });
+  })
+);
+
 app.post(
   "/api/login",
   ah(async (req, res) => {
@@ -136,8 +167,21 @@ app.get(
       params.push(category);
     }
     if (status) {
-      sql += ` AND status = ?`;
-      params.push(status);
+      // Supports a single value (?status=returned) or a comma-separated
+      // list (?status=open,claimed) so callers can either isolate one
+      // status or exclude one (e.g. the Browse page excludes "returned"
+      // items by requesting "open,claimed" instead of leaving this blank).
+      const statuses = status
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (statuses.length === 1) {
+        sql += ` AND status = ?`;
+        params.push(statuses[0]);
+      } else if (statuses.length > 1) {
+        sql += ` AND status IN (${statuses.map(() => "?").join(",")})`;
+        params.push(...statuses);
+      }
     }
     if (q) {
       sql += ` AND (title LIKE ? OR description LIKE ? OR location LIKE ?)`;
@@ -200,12 +244,19 @@ app.get(
 // Claims (verification workflow + token of appreciation)
 // ---------------------------------------------------------------------------
 
+
+
 app.post(
   "/api/items/:id/claim",
   requireAuth,
   ah(async (req, res) => {
     const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
     if (!item) return res.status(404).json({ error: "Item not found" });
+
+    // Block users from claiming or recovering their own reported items
+    if (item.reporter_id === req.userId) {
+      return res.status(400).json({ error: "You cannot claim or report recovery for your own listing." });
+    }
 
     const { proof_notes, token_of_appreciation } = req.body || {};
 
@@ -216,15 +267,22 @@ app.post(
     );
 
     await pool.query(`UPDATE items SET status = 'claimed' WHERE id = ?`, [item.id]);
+
+    const notificationMessage =
+      item.item_type === "found"
+        ? `Someone has claimed to be the owner of '${item.title}'. Awaiting admin verification.`
+        : `Someone reported that they found your lost item '${item.title}'! Awaiting admin verification.`;
+
     await pool.query(
       `INSERT INTO notifications (user_id, message, item_id) VALUES (?, ?, ?)`,
-      [item.reporter_id, `Someone has claimed the item '${item.title}'. Awaiting admin verification.`, item.id]
+      [item.reporter_id, notificationMessage, item.id]
     );
 
     const [[claim]] = await pool.query(`SELECT * FROM claims WHERE id = ?`, [info.insertId]);
     res.status(201).json(await claimOut(claim));
   })
 );
+
 
 app.get(
   "/api/admin/claims",
