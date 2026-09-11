@@ -8,7 +8,7 @@ function formatDate(iso) {
   }
 }
 
-export default function ItemCard({ item, action }) {
+export default function ItemCard({ item, action, showReporter = false }) {
   const photo = imageUrl(item.image_url);
 
   return (
@@ -39,6 +39,7 @@ export default function ItemCard({ item, action }) {
           <span className="item-meta-dot">·</span>
           <span>{formatDate(item.date_occurred)}</span>
         </div>
+        {showReporter && <div className="item-meta-line">Reported by {item.reporter_name}</div>}
         {item.description && <p className="item-desc">{item.description}</p>}
 
         <div className="item-card-footer">

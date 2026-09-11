@@ -1,9 +1,9 @@
 :root {
-  --ink: #1b2430;
-  --ink-soft: #4a5568;
-  --paper: #f6f4ef;
-  --paper-raised: #ffffff;
-  --line: #d9d4c6;
+  --ink: #3a1420;
+  --ink-soft: #5c4a48;
+  --paper: #f6f3ee;
+  --paper-raised: #fffdfb;
+  --line: #ddd0cb;
   --gold: #b9862f;
   --gold-deep: #8f6420;
   --found: #3e6f52;
@@ -11,12 +11,14 @@
   --lost: #a6452a;
   --lost-bg: #f4e6df;
   --pending-bg: #f1e7d2;
+  --ink-hover: #5a2436;
 
   --serif: "Fraunces", "Iowan Old Style", serif;
   --sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 
   --radius: 3px;
 }
+
 
 * {
   box-sizing: border-box;
