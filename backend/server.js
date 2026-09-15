@@ -25,7 +25,8 @@ require("dotenv").config({ quiet: true });
 const { pool, initSchema } = require("./db");
 const { CATEGORIES, runMatchingEngine } = require("./matching");
 const { signToken, requireAuth, requireAdmin } = require("./auth");
-const { userOut, itemOut, itemsOut, claimOut, claimsOut, notificationOut } = require("./serializers");
+const { userOut, itemOut, itemsOut, claimOut, claimsOut, notificationOut, messageOut } = require("./serializers");
+const { listMyConversations, listAllConversations } = require("./conversations");
 
 const app = express();
 app.use(cors());
@@ -91,10 +92,6 @@ app.post(
   })
 );
 
-// Self-service reset: no email server is configured, so identity is
-// confirmed by matching email + phone against what's on file at
-// registration, then the password is updated directly. Not as strong as an
-// emailed reset link, but works with zero extra infrastructure.
 app.post(
   "/api/forgot-password",
   ah(async (req, res) => {
@@ -167,10 +164,6 @@ app.get(
       params.push(category);
     }
     if (status) {
-      // Supports a single value (?status=returned) or a comma-separated
-      // list (?status=open,claimed) so callers can either isolate one
-      // status or exclude one (e.g. the Browse page excludes "returned"
-      // items by requesting "open,claimed" instead of leaving this blank).
       const statuses = status
         .split(",")
         .map((s) => s.trim())
@@ -240,11 +233,30 @@ app.get(
   })
 );
 
+// Admin: Mark an item as returned directly
+app.post(
+  "/api/admin/items/:id/return",
+  requireAuth,
+  requireAdmin,
+  ah(async (req, res) => {
+    const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    await pool.query(`UPDATE items SET status = 'returned' WHERE id = ?`, [item.id]);
+
+    await pool.query(
+      `INSERT INTO notifications (user_id, message, item_id) VALUES (?, ?, ?)`,
+      [item.reporter_id, `Your item '${item.title}' has been marked as returned by admin.`, item.id]
+    );
+
+    const [[updated]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [item.id]);
+    res.json(await itemOut(updated));
+  })
+);
+
 // ---------------------------------------------------------------------------
 // Claims (verification workflow + token of appreciation)
 // ---------------------------------------------------------------------------
-
-
 
 app.post(
   "/api/items/:id/claim",
@@ -252,11 +264,6 @@ app.post(
   ah(async (req, res) => {
     const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
     if (!item) return res.status(404).json({ error: "Item not found" });
-
-    // Block users from claiming or recovering their own reported items
-    if (item.reporter_id === req.userId) {
-      return res.status(400).json({ error: "You cannot claim or report recovery for your own listing." });
-    }
 
     const { proof_notes, token_of_appreciation } = req.body || {};
 
@@ -267,22 +274,15 @@ app.post(
     );
 
     await pool.query(`UPDATE items SET status = 'claimed' WHERE id = ?`, [item.id]);
-
-    const notificationMessage =
-      item.item_type === "found"
-        ? `Someone has claimed to be the owner of '${item.title}'. Awaiting admin verification.`
-        : `Someone reported that they found your lost item '${item.title}'! Awaiting admin verification.`;
-
     await pool.query(
       `INSERT INTO notifications (user_id, message, item_id) VALUES (?, ?, ?)`,
-      [item.reporter_id, notificationMessage, item.id]
+      [item.reporter_id, `Someone has claimed the item '${item.title}'. Awaiting admin verification.`, item.id]
     );
 
     const [[claim]] = await pool.query(`SELECT * FROM claims WHERE id = ?`, [info.insertId]);
     res.status(201).json(await claimOut(claim));
   })
 );
-
 
 app.get(
   "/api/admin/claims",
@@ -335,6 +335,155 @@ app.post(
 
     const [[updated]] = await pool.query(`SELECT * FROM claims WHERE id = ?`, [claim.id]);
     res.json(await claimOut(updated));
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+async function fetchMessageRow(sql, params) {
+  const [[row]] = await pool.query(sql, params);
+  return row;
+}
+
+app.post(
+  "/api/items/:id/messages",
+  requireAuth,
+  ah(async (req, res) => {
+    const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    const { body } = req.body || {};
+    if (!body || !body.trim()) return res.status(400).json({ error: "Message body is required" });
+
+    let toUserId = req.body.to_user_id ? Number(req.body.to_user_id) : null;
+
+    if (!toUserId) {
+      if (req.userId === item.reporter_id) {
+        return res.status(400).json({ error: "to_user_id is required when replying as the item's reporter" });
+      }
+      toUserId = item.reporter_id;
+    }
+
+    if (toUserId === req.userId) {
+      return res.status(400).json({ error: "You can't message yourself" });
+    }
+
+    const isFirstMessage = !(await fetchMessageRow(
+      `SELECT id FROM messages WHERE item_id = ? AND
+       ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) LIMIT 1`,
+      [item.id, req.userId, toUserId, toUserId, req.userId]
+    ));
+
+    const [info] = await pool.query(
+      `INSERT INTO messages (item_id, sender_id, recipient_id, body) VALUES (?, ?, ?, ?)`,
+      [item.id, req.userId, toUserId, body.trim()]
+    );
+
+    const [[sender]] = await pool.query(`SELECT name FROM users WHERE id = ?`, [req.userId]);
+    const notifMessage = isFirstMessage
+      ? `${sender.name} thinks they found your lost item '${item.title}'. Open Messages to chat.`
+      : `New message from ${sender.name} about '${item.title}'.`;
+    await pool.query(`INSERT INTO notifications (user_id, message, item_id) VALUES (?, ?, ?)`, [
+      toUserId,
+      notifMessage,
+      item.id,
+    ]);
+
+    const [[row]] = await pool.query(
+      `SELECT m.*, s.name AS sender_name, r.name AS recipient_name
+       FROM messages m
+       JOIN users s ON s.id = m.sender_id
+       JOIN users r ON r.id = m.recipient_id
+       WHERE m.id = ?`,
+      [info.insertId]
+    );
+    res.status(201).json(messageOut(row));
+  })
+);
+
+app.get(
+  "/api/items/:id/messages",
+  requireAuth,
+  ah(async (req, res) => {
+    const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    let withUserId = req.query.with ? Number(req.query.with) : null;
+
+    if (!withUserId) {
+      const [counterparts] = await pool.query(
+        `SELECT DISTINCT CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS counterpart_id
+         FROM messages WHERE item_id = ? AND (sender_id = ? OR recipient_id = ?)`,
+        [req.userId, item.id, req.userId, req.userId]
+      );
+      if (counterparts.length === 1) {
+        withUserId = counterparts[0].counterpart_id;
+      } else if (counterparts.length === 0) {
+        return res.json([]);
+      } else {
+        return res.status(400).json({ error: "Multiple threads on this item — specify ?with=<userId>" });
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT m.*, s.name AS sender_name, r.name AS recipient_name
+       FROM messages m
+       JOIN users s ON s.id = m.sender_id
+       JOIN users r ON r.id = m.recipient_id
+       WHERE m.item_id = ? AND ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
+       ORDER BY m.created_at ASC`,
+      [item.id, req.userId, withUserId, withUserId, req.userId]
+    );
+
+    if (rows.length === 0) return res.json([]);
+
+    await pool.query(
+      `UPDATE messages SET is_read = 1 WHERE item_id = ? AND sender_id = ? AND recipient_id = ? AND is_read = 0`,
+      [item.id, withUserId, req.userId]
+    );
+
+    res.json(rows.map(messageOut));
+  })
+);
+
+app.get(
+  "/api/conversations",
+  requireAuth,
+  ah(async (req, res) => {
+    res.json(await listMyConversations(req.userId));
+  })
+);
+
+app.get(
+  "/api/admin/conversations",
+  requireAuth,
+  requireAdmin,
+  ah(async (req, res) => {
+    res.json(await listAllConversations());
+  })
+);
+
+app.get(
+  "/api/admin/items/:id/messages",
+  requireAuth,
+  requireAdmin,
+  ah(async (req, res) => {
+    const userA = Number(req.query.a);
+    const userB = Number(req.query.b);
+    if (!userA || !userB) return res.status(400).json({ error: "?a=<userId>&b=<userId> are required" });
+
+    const [rows] = await pool.query(
+      `SELECT m.*, s.name AS sender_name, r.name AS recipient_name
+       FROM messages m
+       JOIN users s ON s.id = m.sender_id
+       JOIN users r ON r.id = m.recipient_id
+       WHERE m.item_id = ? AND ((m.sender_id = ? AND m.recipient_id = ?) OR (m.sender_id = ? AND m.recipient_id = ?))
+       ORDER BY m.created_at ASC`,
+      [req.params.id, userA, userB, userB, userA]
+    );
+    res.json(rows.map(messageOut));
   })
 );
 

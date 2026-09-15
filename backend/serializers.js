@@ -64,4 +64,18 @@ function notificationOut(n) {
   };
 }
 
-module.exports = { userOut, itemOut, itemsOut, claimOut, claimsOut, notificationOut };
+function messageOut(m) {
+  return {
+    id: m.id,
+    item_id: m.item_id,
+    sender_id: m.sender_id,
+    sender_name: m.sender_name || null,
+    recipient_id: m.recipient_id,
+    recipient_name: m.recipient_name || null,
+    body: m.body,
+    is_read: !!m.is_read,
+    created_at: m.created_at,
+  };
+}
+
+module.exports = { userOut, itemOut, itemsOut, claimOut, claimsOut, notificationOut, messageOut };

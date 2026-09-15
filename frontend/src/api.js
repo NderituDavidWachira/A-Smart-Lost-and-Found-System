@@ -20,7 +20,7 @@ async function request(path, { method = "GET", body, token } = {}) {
   }
 
   if (!res.ok) {
-    const message = (data && data.error) || `Request failed (${res.status})`;
+    const message = (data && (data.error || data.message || data.detail)) || `Request failed (${res.status})`;
     throw new Error(message);
   }
   return data;
@@ -53,6 +53,12 @@ export const api = {
   claimItem: (itemId, payload, token) =>
     request(`/api/items/${itemId}/claim`, { method: "POST", body: payload, token }),
 
+  sendMessage: (itemId, payload, token) =>
+    request(`/api/items/${itemId}/messages`, { method: "POST", body: payload, token }),
+  getThread: (itemId, withUserId, token) =>
+    request(`/api/items/${itemId}/messages${withUserId ? `?with=${withUserId}` : ""}`, { token }),
+  myConversations: (token) => request("/api/conversations", { token }),
+
   notifications: (token) => request("/api/notifications", { token }),
   markRead: (id, token) => request(`/api/notifications/${id}/read`, { method: "POST", token }),
 
@@ -60,6 +66,13 @@ export const api = {
   decideClaim: (claimId, decision, token) =>
     request(`/api/admin/claims/${claimId}/decide`, { method: "POST", body: { decision }, token }),
   adminStats: (token) => request("/api/admin/stats", { token }),
+  adminConversations: (token) => request("/api/admin/conversations", { token }),
+  adminThread: (itemId, userA, userB, token) =>
+    request(`/api/admin/items/${itemId}/messages?a=${userA}&b=${userB}`, { token }),
+
+  // Admin action to mark an item as returned
+  markItemReturned: (itemId, token) =>
+    request(`/api/admin/items/${itemId}/return`, { method: "POST", token }),
 };
 
 function imageUrl(path) {

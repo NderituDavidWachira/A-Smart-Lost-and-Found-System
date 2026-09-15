@@ -58,6 +58,24 @@ const SCHEMA = [
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   ) ENGINE=InnoDB`,
+
+  // A "thread" is identified by (item_id, the two participant ids). There's
+  // no separate conversations table — threads are derived from distinct
+  // (item_id, sender/recipient) pairs in this table, since a lost item can
+  // have several different people each claiming to have found it, and each
+  // of those is its own private thread with the reporter.
+  `CREATE TABLE IF NOT EXISTS messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    item_id INT NOT NULL,
+    sender_id INT NOT NULL,
+    recipient_id INT NOT NULL,
+    body TEXT NOT NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES items(id),
+    FOREIGN KEY (sender_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_id) REFERENCES users(id)
+  ) ENGINE=InnoDB`,
 ];
 
 // Adds columns that were introduced after a database may already have been

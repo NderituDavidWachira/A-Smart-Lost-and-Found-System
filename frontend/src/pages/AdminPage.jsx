@@ -6,11 +6,15 @@ import ClaimCard from "../components/ClaimCard";
 
 export default function AdminPage() {
   const { token } = useAuth();
-  const [view, setView] = useState("claims"); // claims | items
+  const [view, setView] = useState("conversations");
   const [stats, setStats] = useState(null);
 
+  const refreshStats = () => {
+    api.adminStats(token).then(setStats).catch(console.error);
+  };
+
   useEffect(() => {
-    api.adminStats(token).then(setStats);
+    refreshStats();
   }, [token]);
 
   return (
@@ -58,9 +62,21 @@ export default function AdminPage() {
         >
           All items
         </button>
+        <button
+          className={`btn btn-sm ${view === "conversations" ? "btn-primary" : "btn-outline"}`}
+          onClick={() => setView("conversations")}
+        >
+          Conversations
+        </button>
       </div>
 
-      {view === "claims" ? <ClaimsQueue token={token} onStatsChange={() => api.adminStats(token).then(setStats)} /> : <AllItems />}
+      {view === "claims" && (
+        <ClaimsQueue token={token} onStatsChange={refreshStats} />
+      )}
+      {view === "items" && <AllItems />}
+      {view === "conversations" && (
+        <ConversationsMonitor token={token} onStatusUpdated={refreshStats} />
+      )}
     </div>
   );
 }
@@ -129,6 +145,219 @@ function ClaimsQueue({ token, onStatsChange }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ConversationsMonitor({ token, onStatusUpdated }) {
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [thread, setThread] = useState([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [updating, setUpdating] = useState(false);
+
+  function loadConversations() {
+    setLoading(true);
+    api
+      .adminConversations(token)
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setConversations(list);
+        if (selected) {
+          const match = list.find(
+            (c) =>
+              c.item_id === selected.item_id &&
+              c.user_a_id === selected.user_a_id &&
+              c.user_b_id === selected.user_b_id
+          );
+          if (match) setSelected(match);
+        }
+      })
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadConversations();
+  }, [token]);
+
+  function openThread(convo) {
+    setSelected(convo);
+    setThreadLoading(true);
+    api
+      .adminThread(convo.item_id, convo.user_a_id, convo.user_b_id, token)
+      .then(setThread)
+      .finally(() => setThreadLoading(false));
+  }
+
+  async function handleMarkReturned() {
+    if (!selected) return;
+    if (!window.confirm(`Mark "${selected.item_title}" as returned?`)) return;
+
+    setUpdating(true);
+    try {
+      await api.markItemReturned(selected.item_id, token);
+
+      setSelected((prev) => (prev ? { ...prev, item_status: "returned" } : null));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.item_id === selected.item_id ? { ...c, item_status: "returned" } : c
+        )
+      );
+      onStatusUpdated?.();
+      loadConversations();
+    } catch (err) {
+      alert(err.message || "Failed to mark item as returned.");
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  function formatTime(iso) {
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  function initials(name) {
+    if (!name) return "?";
+    return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
+  }
+
+  if (loading) return <div className="loading-text">Loading conversations…</div>;
+  if (conversations.length === 0) return <div className="empty-state">No conversations yet.</div>;
+
+  return (
+    <div className="messages-shell">
+      <div className="conv-list">
+        {conversations.map((c) => {
+          const isActive =
+            selected &&
+            selected.item_id === c.item_id &&
+            selected.user_a_id === c.user_a_id &&
+            selected.user_b_id === c.user_b_id;
+
+          return (
+            <button
+              key={`${c.item_id}-${c.user_a_id}-${c.user_b_id}`}
+              className={`conv-row${isActive ? " active" : ""}`}
+              onClick={() => openThread(c)}
+            >
+              <div className="avatar-pair">
+                <div className="avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
+                  {initials(c.user_a_name)}
+                </div>
+                <div className="avatar avatar-pair-second" style={{ width: 28, height: 28, fontSize: 11 }}>
+                  {initials(c.user_b_name)}
+                </div>
+              </div>
+              <div className="conv-row-text">
+                <div className="conv-row-top">
+                  <span className="conv-row-name">
+                    {c.user_a_name} &amp; {c.user_b_name}
+                  </span>
+                  <span className="category-chip">{c.message_count} msgs</span>
+                </div>
+                <div className="conv-row-item">
+                  {c.item_title} ({c.item_type})
+                </div>
+                <div className="conv-row-preview">{c.last_message}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="conv-thread">
+        {!selected ? (
+          <div className="empty-state" style={{ margin: 24 }}>
+            Select a conversation to review it.
+          </div>
+        ) : threadLoading ? (
+          <div className="loading-text" style={{ margin: 24 }}>
+            Loading…
+          </div>
+        ) : (
+          <div className="thread-inner">
+            <div
+              className="thread-header"
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="avatar-pair">
+                  <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+                    {initials(selected.user_a_name)}
+                  </div>
+                  <div className="avatar avatar-pair-second" style={{ width: 32, height: 32, fontSize: 12 }}>
+                    {initials(selected.user_b_name)}
+                  </div>
+                </div>
+                <div>
+                  <div className="thread-header-title">
+                    {selected.user_a_name} &amp; {selected.user_b_name}
+                  </div>
+                  <div className="thread-header-sub">
+                    About &ldquo;{selected.item_title}&rdquo; · read-only monitoring
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                {selected.item_status === "returned" ? (
+                  <span
+                    style={{
+                      background: "#2e7d32",
+                      color: "#fff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      padding: "4px 10px",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    Returned
+                  </span>
+                ) : (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handleMarkReturned}
+                    disabled={updating}
+                  >
+                    {updating ? "Updating..." : "Mark as returned"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="thread-messages">
+              {thread.map((m) => (
+                <div key={m.id} className="msg-bubble-row theirs">
+                  <div className="avatar" style={{ width: 26, height: 26, fontSize: 10 }}>
+                    {initials(m.sender_name)}
+                  </div>
+                  <div className="msg-bubble">
+                    <div className="msg-bubble-sender">{m.sender_name}</div>
+                    <div>{m.body}</div>
+                    <div className="msg-bubble-time">{formatTime(m.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

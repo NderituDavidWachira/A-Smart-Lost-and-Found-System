@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import ItemCard from "../components/ItemCard";
 
 export default function BrowsePage() {
   const { token, user } = useAuth();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ type: "", category: "", q: "" });
   const [claimTarget, setClaimTarget] = useState(null);
+  const [foundTarget, setFoundTarget] = useState(null);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -18,6 +21,10 @@ export default function BrowsePage() {
   useEffect(() => {
     setLoading(true);
     const handle = setTimeout(() => {
+      // Returned items are archived — they're done, so students shouldn't
+      // see them cluttering the browse grid. This isn't a user-facing
+      // toggle; the admin dashboard's "All items" view is where returned
+      // items remain visible.
       api
         .listItems({ ...filters, status: "open,claimed" })
         .then(setItems)
@@ -26,129 +33,74 @@ export default function BrowsePage() {
     return () => clearTimeout(handle);
   }, [filters]);
 
+  function refreshItems() {
+    api.listItems({ ...filters, status: "open,claimed" }).then(setItems);
+  }
+
+  function renderAction(item) {
+    if (item.status !== "open" || item.reporter_id === user?.id) return null;
+
+    if (item.item_type === "found") {
+      return (
+        <button className="btn btn-outline btn-sm" onClick={() => setClaimTarget(item)}>
+          This is mine
+        </button>
+      );
+    }
+
+    // item.item_type === "lost" — someone else browsing can say they found it,
+    // which opens a private, admin-monitored chat with the person who lost it,
+    // instead of forcing them to file a whole separate "found" report first.
+    return (
+      <button className="btn btn-outline btn-sm" onClick={() => setFoundTarget(item)}>
+        I found this
+      </button>
+    );
+  }
+
   return (
     <div>
-      {/* Sticky Filter Header */}
-      <div
-        style={{
-          position: "sticky",
-          top: "-36px",
-          marginTop: "-36px",
-          marginLeft: "-44px",
-          marginRight: "-44px",
-          padding: "36px 44px 14px 44px",
-          backgroundColor: "var(--paper)",
-          zIndex: 10,
-        }}
-      >
-        <div className="page-header" style={{ marginBottom: "14px" }}>
-          <h1 className="page-title">Browse reported items</h1>
-          <p className="page-lede">
-            Search everything reported lost or found on Main Campus. Recognise something? Open it and file a claim —
-            an administrator verifies ownership before anything changes hands.
-          </p>
-        </div>
-
-        <div className="filter-row" style={{ marginBottom: 0 }}>
-          <input
-            type="search"
-            placeholder="Search by keyword, location…"
-            value={filters.q}
-            onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-          />
-          <select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}>
-            <option value="">All types</option>
-            <option value="lost">Lost</option>
-            <option value="found">Found</option>
-          </select>
-          <select value={filters.category} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}>
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="page-header">
+        <h1 className="page-title">Browse reported items</h1>
+        <p className="page-lede">
+          Search everything reported lost or found on Main Campus. Recognise something? Open it — claim a found
+          item, or tell the owner directly if you found something they lost.
+        </p>
       </div>
 
-      <div style={{ paddingTop: "20px" }}>
-        {loading ? (
-          <div className="loading-text">Loading items…</div>
-        ) : items.length === 0 ? (
-          <div className="empty-state">No items match your filters yet. Try widening your search.</div>
-        ) : (
-          <div className="items-grid">
-            {items.map((item) => {
-              const isEligible = item.status === "open" && item.reporter_id !== user?.id;
-
-              return (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  action={
-                    isEligible ? (
-                      item.item_type === "found" ? (
-                        <button
-                          type="button"
-                          onClick={() => setClaimTarget(item)}
-                          style={{
-                            padding: "6px 12px",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            borderRadius: "5px",
-                            border: "1px solid #c9933b",
-                            backgroundColor: "#fffdf9",
-                            color: "#8f6420",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "#b9862f";
-                            e.currentTarget.style.color = "#fff";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = "#fffdf9";
-                            e.currentTarget.style.color = "#8f6420";
-                          }}
-                        >
-                          This is mine
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setClaimTarget(item)}
-                          style={{
-                            padding: "6px 12px",
-                            fontSize: "12px",
-                            fontWeight: "600",
-                            borderRadius: "5px",
-                            border: "1px solid #3e6f52",
-                            backgroundColor: "#f4f9f5",
-                            color: "#275038",
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "#3e6f52";
-                            e.currentTarget.style.color = "#fff";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = "#f4f9f5";
-                            e.currentTarget.style.color = "#275038";
-                          }}
-                        >
-                          I found this
-                        </button>
-                      )
-                    ) : null
-                  }
-                />
-              );
-            })}
-          </div>
-        )}
+      <div className="filter-row">
+        <input
+          type="search"
+          placeholder="Search by keyword, location…"
+          value={filters.q}
+          onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+        />
+        <select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}>
+          <option value="">All types</option>
+          <option value="lost">Lost</option>
+          <option value="found">Found</option>
+        </select>
+        <select value={filters.category} onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}>
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       </div>
+
+      {loading ? (
+        <div className="loading-text">Loading items…</div>
+      ) : items.length === 0 ? (
+        <div className="empty-state">No items match your filters yet. Try widening your search.</div>
+      ) : (
+        <div className="items-grid">
+          {items.map((item) => (
+            <ItemCard key={item.id} item={item} action={renderAction(item)} />
+          ))}
+        </div>
+      )}
 
       {claimTarget && (
         <ClaimModal
@@ -157,7 +109,21 @@ export default function BrowsePage() {
           onClose={() => setClaimTarget(null)}
           onDone={() => {
             setClaimTarget(null);
-            api.listItems({ ...filters, status: "open,claimed" }).then(setItems);
+            refreshItems();
+          }}
+        />
+      )}
+
+      {foundTarget && (
+        <FoundResponseModal
+          item={foundTarget}
+          token={token}
+          onClose={() => setFoundTarget(null)}
+          onDone={() => {
+            const reporterId = foundTarget.reporter_id;
+            const itemId = foundTarget.id;
+            setFoundTarget(null);
+            navigate(`/messages?item=${itemId}&with=${reporterId}`);
           }}
         />
       )}
@@ -170,8 +136,6 @@ function ClaimModal({ item, token, onClose, onDone }) {
   const [token_of_appreciation, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  const isFoundReport = item.item_type === "lost"; // A user is reporting that they found an item listed as lost
 
   async function submit(e) {
     e.preventDefault();
@@ -188,72 +152,107 @@ function ClaimModal({ item, token, onClose, onDone }) {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(58,20,32,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <div className="form-card" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
         <h2 className="page-title" style={{ fontSize: 22 }}>
-          {isFoundReport ? `Report Found: "${item.title}"` : `Claim "${item.title}"`}
+          Claim &ldquo;{item.title}&rdquo;
         </h2>
         <p className="page-lede" style={{ marginBottom: 20 }}>
-          {isFoundReport
-            ? "Provide details on where you found this item and how the owner or campus administration can retrieve it."
-            : "Describe unique details only the true owner would know. An administrator reviews every claim before the item is released."}
+          Describe a detail only the true owner would know. An administrator reviews every claim before the item is
+          released.
         </p>
-
         {error && <div className="error-banner">{error}</div>}
-
         <form onSubmit={submit}>
           <div className="field">
-            <label htmlFor="proof">
-              {isFoundReport ? "Where/when did you find it?" : "Proof of ownership"}
-            </label>
+            <label htmlFor="proof">Proof of ownership</label>
             <textarea
               id="proof"
               rows={3}
               required
               value={proof}
               onChange={(e) => setProof(e.target.value)}
-              placeholder={
-                isFoundReport
-                  ? "e.g. Found on the second floor library table at 11 AM; left with reception..."
-                  : "e.g. Serial number, specific scratches, screen wallpaper description..."
-              }
+              placeholder="e.g. serial number, a scratch on the corner, wallpaper photo…"
             />
           </div>
-
-          {!isFoundReport && (
-            <div className="field">
-              <label htmlFor="tok">Token of appreciation for the finder (optional)</label>
-              <input
-                id="tok"
-                value={token_of_appreciation}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="e.g. a thank-you note, small reward"
-              />
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+          <div className="field">
+            <label htmlFor="tok">Token of appreciation for the finder (optional)</label>
+            <input
+              id="tok"
+              value={token_of_appreciation}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="e.g. a thank-you card, small reward"
+            />
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button type="button" className="btn btn-outline" onClick={onClose}>
               Cancel
             </button>
-            <button
-              type="submit"
-              className={isFoundReport ? "btn btn-primary" : "btn btn-gold"}
-              disabled={busy}
-            >
-              {busy ? "Submitting…" : isFoundReport ? "Submit report" : "Submit claim"}
+            <button type="submit" className="btn btn-gold" disabled={busy}>
+              {busy ? "Submitting…" : "Submit claim"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FoundResponseModal({ item, token, onClose, onDone }) {
+  const { user } = useAuth();
+  const [body, setBody] = useState(
+    () => `Hi, I'm ${user?.name || "a fellow student"}. I think I found your ${item.title}. Let me know where we can meet up!`
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!body.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      // No to_user_id needed — the backend defaults to the item's reporter
+      // for a stranger's first message on a lost item.
+      await api.sendMessage(item.id, { body: body.trim() }, token);
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="form-card" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <h2 className="page-title" style={{ fontSize: 22 }}>
+          Report Found: &ldquo;{item.title}&rdquo;
+        </h2>
+        <p className="page-lede" style={{ marginBottom: 20 }}>
+          We've drafted a starting message for you — add where and when you found it, then send.
+        </p>
+        {error && <div className="error-banner">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="found-body">Your message</label>
+            <textarea
+              id="found-body"
+              rows={4}
+              required
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </div>
+          <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: -6, marginBottom: 16 }}>
+            This starts a private conversation with the person who reported it lost. An administrator can review
+            the conversation if needed.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button type="button" className="btn btn-outline" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? "Sending…" : "Submit report"}
             </button>
           </div>
         </form>
