@@ -21,6 +21,9 @@ async function request(path, { method = "GET", body, token } = {}) {
     res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
+      // Never reuse a stored reply. API data depends on who is logged in, so a
+      // cached copy could show one user's identity or data to another.
+      cache: "no-store",
       body: isFormData ? body : body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -46,7 +49,10 @@ export const api = {
   register: (payload) => request("/api/register", { method: "POST", body: payload }),
   login: (payload) => request("/api/login", { method: "POST", body: payload }),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: payload }),
-  me: (token) => request("/api/me", { token }),
+
+  // The timestamp makes every call a unique address, so even an old copy stored
+  // by the browser or the host can never be matched.
+  me: (token) => request(`/api/me?_=${Date.now()}`, { token }),
 
   categories: () => request("/api/categories"),
   listItems: (params = {}) => {
