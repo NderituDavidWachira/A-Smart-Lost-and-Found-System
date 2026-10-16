@@ -1,15 +1,25 @@
 const mysql = require("mysql2/promise");
 require("dotenv").config({ quiet: true });
 
-const pool = mysql.createPool({
+// Local XAMPP defaults are used when an environment variable is not set.
+// On cPanel, the DB_* variables from "Setup Node.js App" take over.
+const poolConfig = {
   host: process.env.DB_HOST || "127.0.0.1",
-  port: process.env.DB_PORT || 3306,
+  port: Number(process.env.DB_PORT) || 3306,
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "lostfound",
   waitForConnections: true,
   connectionLimit: 10,
-});
+  connectTimeout: 15000,
+};
+
+// Only for cloud databases that require SSL. Leave DB_SSL unset on XAMPP and cPanel.
+if (String(process.env.DB_SSL).toLowerCase() === "true") {
+  poolConfig.ssl = { minVersion: "TLSv1.2", rejectUnauthorized: true };
+}
+
+const pool = mysql.createPool(poolConfig);
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -59,11 +69,9 @@ const SCHEMA = [
     FOREIGN KEY (user_id) REFERENCES users(id)
   ) ENGINE=InnoDB`,
 
-  // A "thread" is identified by (item_id, the two participant ids). There's
-  // no separate conversations table — threads are derived from distinct
-  // (item_id, sender/recipient) pairs in this table, since a lost item can
-  // have several different people each claiming to have found it, and each
-  // of those is its own private thread with the reporter.
+  // A "thread" is identified by (item_id, the two participant ids). There is
+  // no separate conversations table. Threads are derived from distinct
+  // (item_id, sender/recipient) pairs in this table.
   `CREATE TABLE IF NOT EXISTS messages (
     id INT PRIMARY KEY AUTO_INCREMENT,
     item_id INT NOT NULL,
@@ -78,8 +86,7 @@ const SCHEMA = [
   ) ENGINE=InnoDB`,
 ];
 
-// Adds columns that were introduced after a database may already have been
-// created, so existing installs don't need to be dropped and recreated.
+// Adds columns introduced after a database may already have been created.
 const MIGRATIONS = [
   {
     table: "items",

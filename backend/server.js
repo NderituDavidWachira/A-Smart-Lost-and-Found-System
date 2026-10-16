@@ -1,17 +1,15 @@
 /**
  * St. Paul's University Lost & Found Management System
- * Backend API — Node.js + Express + MySQL (mysql2) + JWT
+ * Backend API: Node.js + Express + MySQL (mysql2) + JWT
  *
- * Implements the modules described in the project design:
- * - Authentication & Authorization Module (JWT-based)
- * - Database Management Module (MySQL via mysql2/promise, connection pool)
- * - Business Logic Module (categorisation, matching algorithm, claims) -> matching.js
- * - Notification Module (in-app notification feed; email/SMS hooks stubbed)
- * - Admin & User Management Module (verification dashboard, stats)
+ * Works both locally (XAMPP + Vite dev server) and on cPanel (Node.js App).
+ * All environment-specific values come from environment variables, with
+ * local defaults used when a variable is not set.
  *
  * NOTE: Admin accounts are NOT created through this API. There is
- * intentionally no admin signup path here — the single admin account is
- * created directly in the database via scripts/create-admin.js.
+ * intentionally no admin signup path here. The single admin account is
+ * created directly in the database via scripts/create-admin.js
+ * (or by setting role = 'admin' on a registered user in phpMyAdmin).
  */
 const path = require("path");
 const fs = require("fs");
@@ -29,17 +27,58 @@ const { userOut, itemOut, itemsOut, claimOut, claimsOut, notificationOut, messag
 const { listMyConversations, listAllConversations } = require("./conversations");
 
 const app = express();
-app.use(cors());
+
+// ---------------------------------------------------------------------------
+// CORS: which frontends may call this API
+// ---------------------------------------------------------------------------
+// Local Vite dev server + your live Netlify site are allowed by default.
+// Add more (comma separated) with the CORS_ORIGINS environment variable,
+// e.g. CORS_ORIGINS=https://mycustomdomain.com,https://www.mycustomdomain.com
+const DEFAULT_ORIGINS = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "https://a-smart-lost-and-found-system.netlify.app",
+];
+
+const extraOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+const allowedOrigins = new Set([...DEFAULT_ORIGINS, ...extraOrigins]);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // No Origin header = curl, Postman, or same-origin request: allow.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      console.warn(`CORS blocked origin: ${origin}`);
+      return callback(null, false);
+    },
+  })
+);
+
 app.use(express.json());
 
+// On cPanel (Passenger) PORT is provided by the host. Locally it falls back to 5001.
 const PORT = process.env.PORT || 5001;
 
+if (
+  process.env.NODE_ENV === "production" &&
+  (!process.env.JWT_SECRET || process.env.JWT_SECRET === "change-this-in-production")
+) {
+  console.warn("WARNING: JWT_SECRET is not set to a strong value in production!");
+}
+
 // ---------------------------------------------------------------------------
-// Image uploads: stored on disk under backend/uploads, served statically at
-// /uploads/<filename>. Only image files up to 5MB are accepted.
+// Image uploads: stored on disk and served statically at /uploads/<filename>.
+// Only image files up to 5MB are accepted.
+// Set UPLOAD_DIR to override the folder (default: backend/uploads).
 // ---------------------------------------------------------------------------
 
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 app.use("/uploads", express.static(UPLOAD_DIR));
 
@@ -63,6 +102,51 @@ const upload = multer({
 // Wrap async route handlers so thrown errors reach Express's error handler
 // instead of crashing the process.
 const ah = (fn) => (req, res, next) => fn(req, res, next).catch(next);
+
+// ---------------------------------------------------------------------------
+// Root + health (handy for checking the live deployment in a browser)
+// ---------------------------------------------------------------------------
+// Troubleshooting: add the environment variable DEBUG_HEALTH=true (then
+// Restart the app) to see the exact database error and which settings the
+// server is using. The password is never shown. REMOVE the variable once
+// everything works, because it reveals internal details.
+
+const DEBUG_HEALTH = String(process.env.DEBUG_HEALTH).toLowerCase() === "true";
+
+app.get("/", (req, res) => {
+  res.json({ name: "St. Paul's Lost & Found API", status: "running" });
+});
+
+app.get(
+  "/api/health",
+  ah(async (req, res) => {
+    const result = { status: "ok", database: "ok", time: new Date().toISOString() };
+
+    try {
+      await pool.query("SELECT 1");
+    } catch (err) {
+      result.database = "error";
+      if (DEBUG_HEALTH) {
+        result.error_code = err.code || null; // e.g. ER_ACCESS_DENIED_ERROR
+        result.error_message = err.message; // exact MySQL message
+      }
+    }
+
+    if (DEBUG_HEALTH) {
+      result.settings_seen = {
+        DB_HOST: process.env.DB_HOST || "(not set, using default 127.0.0.1)",
+        DB_PORT: process.env.DB_PORT || "(not set, using default 3306)",
+        DB_USER: process.env.DB_USER || "(not set, using default root)",
+        DB_NAME: process.env.DB_NAME || "(not set, using default lostfound)",
+        DB_PASSWORD: process.env.DB_PASSWORD ? "(set)" : "(NOT SET)",
+        JWT_SECRET: process.env.JWT_SECRET ? "(set)" : "(NOT SET)",
+        NODE_ENV: process.env.NODE_ENV || "(not set)",
+      };
+    }
+
+    res.json(result);
+  })
+);
 
 // ---------------------------------------------------------------------------
 // Auth routes
@@ -233,7 +317,7 @@ app.get(
   })
 );
 
-// Admin: Mark an item as returned directly
+// Admin: mark an item as returned directly
 app.post(
   "/api/admin/items/:id/return",
   requireAuth,
@@ -423,7 +507,7 @@ app.get(
       } else if (counterparts.length === 0) {
         return res.json([]);
       } else {
-        return res.status(400).json({ error: "Multiple threads on this item — specify ?with=<userId>" });
+        return res.status(400).json({ error: "Multiple threads on this item. Specify ?with=<userId>" });
       }
     }
 
@@ -552,23 +636,37 @@ app.get(
   })
 );
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
-});
-
 // Central error handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
 
-initSchema()
-  .then(() => {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Lost & Found API listening on http://0.0.0.0:${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("Failed to initialise database schema:", err);
-    process.exit(1);
+// ---------------------------------------------------------------------------
+// Startup
+// ---------------------------------------------------------------------------
+// The server always starts listening (cPanel/Passenger needs this). If the
+// database is unreachable, the exact error is logged (stderr.log on cPanel)
+// and /api/health reports database: "error".
+
+async function start() {
+  try {
+    await initSchema();
+    console.log("Database connected and schema ready.");
+  } catch (err) {
+    console.error("Database initialisation failed:");
+    console.error("  code   :", err.code);
+    console.error("  message:", err.message);
+    console.error("  user   :", process.env.DB_USER || "(not set, default root)");
+    console.error("  db     :", process.env.DB_NAME || "(not set, default lostfound)");
+    console.error("  host   :", process.env.DB_HOST || "(not set, default 127.0.0.1)");
+  }
+
+  // No host argument: works with both a normal port (local) and the
+  // socket/port that Passenger assigns on cPanel.
+  app.listen(PORT, () => {
+    console.log(`Lost & Found API listening on ${PORT}`);
   });
+}
+
+start();

@@ -1,4 +1,14 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5001";
+// Local development (npm run dev) falls back to your local backend.
+// On Netlify, set VITE_API_URL to your live backend, e.g. https://api.ryantech.co.ke
+const rawBaseUrl =
+  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:5001" : "");
+
+// Remove trailing slashes so "https://api.site.com/" doesn't create "//api/..."
+const BASE_URL = rawBaseUrl.replace(/\/+$/, "");
+
+if (!BASE_URL) {
+  console.error("VITE_API_URL is not set. Add it in Netlify > Environment variables and redeploy.");
+}
 
 async function request(path, { method = "GET", body, token } = {}) {
   const isFormData = body instanceof FormData;
@@ -6,11 +16,17 @@ async function request(path, { method = "GET", body, token } = {}) {
   if (!isFormData && body) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // Network error, wrong URL, server down, CORS block, or mixed content (http vs https)
+    throw new Error("Cannot reach the server. Please check your connection and try again.");
+  }
 
   let data = null;
   try {
@@ -75,8 +91,10 @@ export const api = {
     request(`/api/admin/items/${itemId}/return`, { method: "POST", token }),
 };
 
+// Image paths are stored as "/uploads/<file>", so prefix them with the backend URL.
 function imageUrl(path) {
   if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
   return `${BASE_URL}${path}`;
 }
 
