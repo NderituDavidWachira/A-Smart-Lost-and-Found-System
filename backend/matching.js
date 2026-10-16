@@ -101,4 +101,4 @@ async function runMatchingEngine(newItem) {
   return scored;
 }
 
-module.exports = { CATEGORIES, runMatchingEngine };
+module.exports = { CATEGORIES, runMatchingEngine }; 
