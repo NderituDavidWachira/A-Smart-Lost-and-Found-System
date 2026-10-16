@@ -8,6 +8,8 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
   const location = useLocation();
   const isAdmin = user?.role === "admin";
 
+  const closeMenu = () => setNavOpen(false);
+
   // Close the drawer whenever the route changes, so tapping a nav link on
   // mobile doesn't leave the menu covering the page you just opened.
   useEffect(() => {
@@ -23,6 +25,7 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
     <div className="app-shell">
       <header className="mobile-bar">
         <button
+          type="button"
           className="hamburger"
           aria-label="Open navigation menu"
           aria-expanded={navOpen}
@@ -36,7 +39,7 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
         <div className="mobile-bar-title">Campus Lost &amp; Found</div>
       </header>
 
-      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      {navOpen && <div className="nav-backdrop" onClick={closeMenu} />}
 
       <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div className="sidebar-head">
@@ -45,13 +48,13 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
             <div className="brand-sub">St. Paul&apos;s University · Main Campus</div>
           </div>
           <button type="button" className="drawer-close" onClick={closeMenu} aria-label="Close menu">
-  ✕
-</button>
+            ✕
+          </button>
         </div>
 
         <nav className="nav-group">
           {isAdmin ? (
-            // Admins only manage the system — they don't browse, report, or
+            // Admins only manage the system. They don't browse, report, or
             // use the student message/notification feeds, so the dashboard
             // is the only destination.
             <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
@@ -80,7 +83,7 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
         <div className="sidebar-footer">
           <div className="sidebar-user">{user?.name}</div>
           <div>{isAdmin ? "Administrator" : "Student"}</div>
-          <button className="logout-btn" onClick={logout}>
+          <button type="button" className="logout-btn" onClick={logout}>
             Log out
           </button>
         </div>
