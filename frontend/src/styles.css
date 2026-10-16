@@ -104,6 +104,33 @@ button {
   margin-bottom: 28px;
 }
 
+.drawer-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  color: #f3e3a3;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(227, 194, 90, 0.55);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.drawer-close:hover {
+  background: rgba(227, 194, 90, 0.25);
+}
+
+.drawer-close:active {
+  transform: scale(0.94);
+}
+
 .nav-link {
   display: flex;
   align-items: center;

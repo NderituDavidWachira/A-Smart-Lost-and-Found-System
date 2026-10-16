@@ -44,9 +44,9 @@ export default function Layout({ children, unreadCount = 0, unreadMessages = 0 }
             <div className="brand">Campus Lost &amp; Found</div>
             <div className="brand-sub">St. Paul&apos;s University · Main Campus</div>
           </div>
-          <button className="nav-close" aria-label="Close navigation menu" onClick={() => setNavOpen(false)}>
-            Close
-          </button>
+          <button type="button" className="drawer-close" onClick={closeMenu} aria-label="Close menu">
+  ✕
+</button>
         </div>
 
         <nav className="nav-group">
