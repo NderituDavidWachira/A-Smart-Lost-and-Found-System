@@ -4,6 +4,8 @@ import { useAuth } from "../AuthContext";
 import "./AuthPage.css";
 import campusPhoto from "../assets/good.jpg";
 import logol from "../assets/St.logo.png";
+import InstallButton from "../components/InstallButton";
+
 
 export default function AuthPage() {
   const [mode, setMode] = useState("login"); // login | register
@@ -179,6 +181,8 @@ export default function AuthPage() {
       </div>
 
       <div className="auth-footer">2026 © Campus Lost &amp; Found</div>
+
+<InstallButton />
 
       {showForgot && (
         <ForgotPasswordModal
