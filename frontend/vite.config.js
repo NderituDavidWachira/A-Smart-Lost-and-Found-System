@@ -10,7 +10,7 @@ export default defineConfig({
       includeAssets: ["favicon.ico", "apple-touch-icon-180x180.png"],
       manifest: {
         name: "St. Paul's University Lost & Found",
-        short_name: "Lost & Found",
+        short_name: "Smart Lost&Found",
         description: "Report, search and claim lost and found items on campus.",
         theme_color: "#6b1f2a",
         background_color: "#3a0f16",

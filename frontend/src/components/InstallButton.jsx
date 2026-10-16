@@ -45,7 +45,7 @@ export default function InstallButton() {
   return (
     <div className="install-wrap">
       <button type="button" className="install-btn" onClick={handleClick}>
-        ⬇ Install app
+        Install app
       </button>
 
       {showHelp && (
