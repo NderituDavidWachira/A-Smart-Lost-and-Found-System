@@ -31,9 +31,6 @@ const app = express();
 // ---------------------------------------------------------------------------
 // CORS: which frontends may call this API
 // ---------------------------------------------------------------------------
-// Local Vite dev server + your live Netlify site are allowed by default.
-// Add more (comma separated) with the CORS_ORIGINS environment variable,
-// e.g. CORS_ORIGINS=https://mycustomdomain.com,https://www.mycustomdomain.com
 const DEFAULT_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -51,7 +48,6 @@ const allowedOrigins = new Set([...DEFAULT_ORIGINS, ...extraOrigins]);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // No Origin header = curl, Postman, or same-origin request: allow.
       if (!origin) return callback(null, true);
       if (allowedOrigins.has(origin)) return callback(null, true);
       console.warn(`CORS blocked origin: ${origin}`);
@@ -62,7 +58,6 @@ app.use(
 
 app.use(express.json());
 
-// On cPanel (Passenger) PORT is provided by the host. Locally it falls back to 5001.
 const PORT = process.env.PORT || 5001;
 
 if (
@@ -74,8 +69,6 @@ if (
 
 // ---------------------------------------------------------------------------
 // Image uploads: stored on disk and served statically at /uploads/<filename>.
-// Only image files up to 5MB are accepted.
-// Set UPLOAD_DIR to override the folder (default: backend/uploads).
 // ---------------------------------------------------------------------------
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
@@ -99,17 +92,11 @@ const upload = multer({
   },
 });
 
-// Wrap async route handlers so thrown errors reach Express's error handler
-// instead of crashing the process.
 const ah = (fn) => (req, res, next) => fn(req, res, next).catch(next);
 
 // ---------------------------------------------------------------------------
-// Root + health (handy for checking the live deployment in a browser)
+// Root + health
 // ---------------------------------------------------------------------------
-// Troubleshooting: add the environment variable DEBUG_HEALTH=true (then
-// Restart the app) to see the exact database error and which settings the
-// server is using. The password is never shown. REMOVE the variable once
-// everything works, because it reveals internal details.
 
 const DEBUG_HEALTH = String(process.env.DEBUG_HEALTH).toLowerCase() === "true";
 
@@ -127,8 +114,8 @@ app.get(
     } catch (err) {
       result.database = "error";
       if (DEBUG_HEALTH) {
-        result.error_code = err.code || null; // e.g. ER_ACCESS_DENIED_ERROR
-        result.error_message = err.message; // exact MySQL message
+        result.error_code = err.code || null;
+        result.error_message = err.message;
       }
     }
 
@@ -314,6 +301,96 @@ app.get(
     const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [req.params.id]);
     if (!item) return res.status(404).json({ error: "Item not found" });
     res.json(await itemOut(item));
+  })
+);
+
+// UPDATE ITEM (Only reporter or admin)
+app.put(
+  "/api/items/:id",
+  requireAuth,
+  (req, res, next) => {
+    upload.single("image")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  },
+  ah(async (req, res) => {
+    const itemId = req.params.id;
+    const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [itemId]);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    const [[currentUser]] = await pool.query(`SELECT role FROM users WHERE id = ?`, [req.userId]);
+    const isAdmin = currentUser && currentUser.role === "admin";
+
+    if (item.reporter_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ error: "Unauthorized: You can only edit your own items" });
+    }
+
+    const { title, description, category, location } = req.body || {};
+
+    if (category && !CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: "invalid category" });
+    }
+
+    // Keep existing image if no replacement file was uploaded
+    let finalImageUrl = item.image_url;
+    if (req.file) {
+      finalImageUrl = `/uploads/${req.file.filename}`;
+      // Clean up previous uploaded file from disk if it exists
+      if (item.image_url && item.image_url.startsWith("/uploads/")) {
+        const oldPath = path.join(__dirname, item.image_url);
+        fs.unlink(oldPath, () => {});
+      }
+    }
+
+    await pool.query(
+      `UPDATE items 
+       SET title = ?, description = ?, category = ?, location = ?, image_url = ? 
+       WHERE id = ?`,
+      [
+        title !== undefined ? title : item.title,
+        description !== undefined ? description : item.description,
+        category !== undefined ? category : item.category,
+        location !== undefined ? location : item.location,
+        finalImageUrl,
+        itemId,
+      ]
+    );
+
+    const [[updated]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [itemId]);
+    res.json(await itemOut(updated));
+  })
+);
+
+// DELETE ITEM (Only reporter or admin)
+app.delete(
+  "/api/items/:id",
+  requireAuth,
+  ah(async (req, res) => {
+    const itemId = req.params.id;
+    const [[item]] = await pool.query(`SELECT * FROM items WHERE id = ?`, [itemId]);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    const [[currentUser]] = await pool.query(`SELECT role FROM users WHERE id = ?`, [req.userId]);
+    const isAdmin = currentUser && currentUser.role === "admin";
+
+    if (item.reporter_id !== req.userId && !isAdmin) {
+      return res.status(403).json({ error: "Unauthorized: You can only delete your own items" });
+    }
+
+    // Remove foreign-key associated records first
+    await pool.query(`DELETE FROM messages WHERE item_id = ?`, [itemId]);
+    await pool.query(`DELETE FROM claims WHERE item_id = ?`, [itemId]);
+    await pool.query(`DELETE FROM notifications WHERE item_id = ?`, [itemId]);
+    await pool.query(`DELETE FROM items WHERE id = ?`, [itemId]);
+
+    // Clean up file if present
+    if (item.image_url && item.image_url.startsWith("/uploads/")) {
+      const filePath = path.join(__dirname, item.image_url);
+      fs.unlink(filePath, () => {});
+    }
+
+    res.json({ message: "Item deleted successfully" });
   })
 );
 
@@ -639,15 +716,12 @@ app.get(
 // Central error handler
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ error: "Internal server error" });
+  res.status(500).json({ error: err.message || "Internal server error" });
 });
 
 // ---------------------------------------------------------------------------
 // Startup
 // ---------------------------------------------------------------------------
-// The server always starts listening (cPanel/Passenger needs this). If the
-// database is unreachable, the exact error is logged (stderr.log on cPanel)
-// and /api/health reports database: "error".
 
 async function start() {
   try {
@@ -662,8 +736,6 @@ async function start() {
     console.error("  host   :", process.env.DB_HOST || "(not set, default 127.0.0.1)");
   }
 
-  // No host argument: works with both a normal port (local) and the
-  // socket/port that Passenger assigns on cPanel.
   app.listen(PORT, () => {
     console.log(`Lost & Found API listening on ${PORT}`);
   });

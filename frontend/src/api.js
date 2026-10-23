@@ -21,13 +21,11 @@ async function request(path, { method = "GET", body, token } = {}) {
     res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
-      // Never reuse a stored reply. API data depends on who is logged in, so a
-      // cached copy could show one user's identity or data to another.
+      // Never reuse a stored reply.
       cache: "no-store",
       body: isFormData ? body : body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    // Network error, wrong URL, server down, CORS block, or mixed content (http vs https)
     throw new Error("Cannot reach the server. Please check your connection and try again.");
   }
 
@@ -50,8 +48,6 @@ export const api = {
   login: (payload) => request("/api/login", { method: "POST", body: payload }),
   forgotPassword: (payload) => request("/api/forgot-password", { method: "POST", body: payload }),
 
-  // The timestamp makes every call a unique address, so even an old copy stored
-  // by the browser or the host can never be matched.
   me: (token) => request(`/api/me?_=${Date.now()}`, { token }),
 
   categories: () => request("/api/categories"),
@@ -60,6 +56,7 @@ export const api = {
     return request(`/api/items${qs ? `?${qs}` : ""}`);
   },
   getItem: (id) => request(`/api/items/${id}`),
+
   createItem: (payload, token) => {
     const formData = new FormData();
     Object.entries(payload).forEach(([key, value]) => {
@@ -71,6 +68,29 @@ export const api = {
     });
     return request("/api/items", { method: "POST", body: formData, token });
   },
+
+  // Edit item (handles both file replacement via FormData or plain JSON updates)
+  updateItem: (id, payload, token) => {
+    let body;
+    if (payload instanceof FormData) {
+      body = payload;
+    } else {
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (key === "image") {
+          if (value instanceof File) formData.append("image", value);
+        } else if (value !== undefined && value !== null) {
+          formData.append(key, value);
+        }
+      });
+      body = formData;
+    }
+    return request(`/api/items/${id}`, { method: "PUT", body, token });
+  },
+
+  // Delete item
+  deleteItem: (id, token) =>
+    request(`/api/items/${id}`, { method: "DELETE", token }),
 
   claimItem: (itemId, payload, token) =>
     request(`/api/items/${itemId}/claim`, { method: "POST", body: payload, token }),

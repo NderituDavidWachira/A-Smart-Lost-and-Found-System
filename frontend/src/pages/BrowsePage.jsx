@@ -13,6 +13,7 @@ export default function BrowsePage() {
   const [filters, setFilters] = useState({ type: "", category: "", q: "" });
   const [claimTarget, setClaimTarget] = useState(null);
   const [foundTarget, setFoundTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
 
   useEffect(() => {
     api.categories().then(setCategories).catch(() => {});
@@ -21,10 +22,6 @@ export default function BrowsePage() {
   useEffect(() => {
     setLoading(true);
     const handle = setTimeout(() => {
-      // Returned items are archived — they're done, so students shouldn't
-      // see them cluttering the browse grid. This isn't a user-facing
-      // toggle; the admin dashboard's "All items" view is where returned
-      // items remain visible.
       api
         .listItems({ ...filters, status: "open,claimed" })
         .then(setItems)
@@ -37,7 +34,38 @@ export default function BrowsePage() {
     api.listItems({ ...filters, status: "open,claimed" }).then(setItems);
   }
 
+  async function handleDelete(item) {
+    if (!window.confirm(`Are you sure you want to delete "${item.title}"?`)) return;
+    try {
+      await api.deleteItem(item.id, token);
+      refreshItems();
+    } catch (err) {
+      alert(err.message || "Could not delete item");
+    }
+  }
+
   function renderAction(item) {
+    // If current logged-in user is the reporter of this lost item, show owner controls
+    if (item.reporter_id === user?.id && item.item_type === "lost") {
+      return (
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setEditTarget(item)}
+          >
+            Edit
+          </button>
+          <button
+            className="btn btn-outline btn-sm"
+            style={{ color: "#d9534f", borderColor: "#d9534f" }}
+            onClick={() => handleDelete(item)}
+          >
+            Delete
+          </button>
+        </div>
+      );
+    }
+
     if (item.status !== "open" || item.reporter_id === user?.id) return null;
 
     if (item.item_type === "found") {
@@ -48,9 +76,6 @@ export default function BrowsePage() {
       );
     }
 
-    // item.item_type === "lost" — someone else browsing can say they found it,
-    // which opens a private, admin-monitored chat with the person who lost it,
-    // instead of forcing them to file a whole separate "found" report first.
     return (
       <button className="btn btn-outline btn-sm" onClick={() => setFoundTarget(item)}>
         I found this
@@ -102,6 +127,19 @@ export default function BrowsePage() {
         </div>
       )}
 
+      {editTarget && (
+        <EditItemModal
+          item={editTarget}
+          token={token}
+          categories={categories}
+          onClose={() => setEditTarget(null)}
+          onDone={() => {
+            setEditTarget(null);
+            refreshItems();
+          }}
+        />
+      )}
+
       {claimTarget && (
         <ClaimModal
           item={claimTarget}
@@ -127,6 +165,131 @@ export default function BrowsePage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function EditItemModal({ item, token, categories, onClose, onDone }) {
+  const [title, setTitle] = useState(item.title || "");
+  const [category, setCategory] = useState(item.category || "");
+  const [location, setLocation] = useState(item.location || "");
+  const [description, setDescription] = useState(item.description || "");
+  const [imageFile, setImageFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(item.image_url || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function handleFileChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+
+    try {
+      await api.updateItem(
+        item.id,
+        {
+          title,
+          category,
+          location,
+          description,
+          image: imageFile, // Passed directly as a File object
+        },
+        token
+      );
+      onDone();
+    } catch (err) {
+      setError(err.message || "Failed to update item details");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="form-card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <h2 className="page-title" style={{ fontSize: 22 }}>
+          Edit Lost Item
+        </h2>
+        {error && <div className="error-banner">{error}</div>}
+        <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="edit-title">Item Name / Title</label>
+            <input
+              id="edit-title"
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-category">Category</label>
+            <select
+              id="edit-category"
+              required
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">Select Category</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-location">Last Seen Location</label>
+            <input
+              id="edit-location"
+              type="text"
+              required
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-image">Replace Image (optional)</label>
+            <input id="edit-image" type="file" accept="image/*" onChange={handleFileChange} />
+            {previewUrl && (
+              <img
+                src={previewUrl}
+                alt="Preview"
+                style={{ width: 80, height: 80, objectFit: "cover", marginTop: 8, borderRadius: 6 }}
+              />
+            )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-desc">Description</label>
+            <textarea
+              id="edit-desc"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+            <button type="button" className="btn btn-outline" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -211,8 +374,6 @@ function FoundResponseModal({ item, token, onClose, onDone }) {
     setBusy(true);
     setError("");
     try {
-      // No to_user_id needed — the backend defaults to the item's reporter
-      // for a stranger's first message on a lost item.
       await api.sendMessage(item.id, { body: body.trim() }, token);
       onDone();
     } catch (err) {
